@@ -60,7 +60,8 @@ export async function getDb(): Promise<DbClient> {
 
   const url = process.env['DATABASE_URL'];
   if (isPostgresUrl(url)) {
-    pool = new Pool({ connectionString: url });
+    // Render Postgres requires SSL; rejectUnauthorized:false matches their setup.
+    pool = new Pool({ connectionString: url, ssl: { rejectUnauthorized: false } });
     const client: DbClient = {
       query: (text, params) => pool!.query(text, params as unknown[]),
     };

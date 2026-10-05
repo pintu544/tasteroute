@@ -1,8 +1,9 @@
 import 'dotenv/config';
 import cors from 'cors';
 import express from 'express';
+import { randomUUID } from 'node:crypto';
+import { runAgentTurn } from './agent.js';
 import { getPlan } from './db.js';
-import { extractIntent } from './intent.js';
 import { llmClientFromEnv, type LLMClient } from './llm.js';
 import { qlooClientFromEnv, type QlooClient } from './qloo.js';
 
@@ -33,8 +34,9 @@ app.get('/api/health', (_req, res) => {
 });
 
 /**
- * T-3: intent extraction only. T-5 extends this into the full agent loop
- * (entity resolution -> Qloo insights -> itinerary assembly -> persistence).
+ * Full agent loop (T-5): intent -> entity resolution -> Qloo insights ->
+ * itinerary assembly -> persistence. Returns clarification instead of a plan
+ * when the brief is unusable. Qloo/LLM failures -> 500 JSON (FR-7).
  */
 app.post('/api/plan', async (req, res) => {
   const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
@@ -42,13 +44,26 @@ app.post('/api/plan', async (req, res) => {
     res.status(400).json({ error: 'message is required' });
     return;
   }
+  const sessionId =
+    typeof req.body?.sessionId === 'string' && req.body.sessionId ? req.body.sessionId : randomUUID();
   try {
-    const { llm } = getClients();
-    const intent = await extractIntent(llm, message);
-    res.json({ intent });
+    const { llm, qloo } = getClients();
+    const result = await runAgentTurn({ llm, qloo }, { message, sessionId });
+    res.json({
+      sessionId: result.sessionId,
+      intent: result.intent,
+      reply: result.reply,
+      plan: result.plan
+        ? {
+            id: result.plan.id,
+            shareUrl: `/plan/${result.plan.id}`,
+            itinerary: result.plan.itinerary,
+          }
+        : null,
+    });
   } catch (err) {
     res.status(500).json({
-      error: err instanceof Error ? err.message : 'intent extraction failed',
+      error: err instanceof Error ? err.message : 'plan generation failed',
     });
   }
 });

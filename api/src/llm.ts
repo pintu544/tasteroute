@@ -59,14 +59,35 @@ export class FastRouterLLM implements LLMClient {
   }
 }
 
-/** Canned intent for offline development. */
+/** Canned responses for offline development: intent extraction + itinerary assembly. */
 export class FixtureLLM implements LLMClient {
   readonly mode = 'mock' as const;
 
-  async completeJSON<T>(_system: string, user: string): Promise<T> {
-    void _system;
-    // If the "user" payload looks like an intent-extraction request, return a canned intent.
-    const canned = {
+  async completeJSON<T>(system: string, _user: string): Promise<T> {
+    // Itinerary-assembly prompt -> canned itinerary referencing fixture place IDs.
+    if (system.includes("TasteRoute's planner")) {
+      const itinerary = {
+        stops: [
+          {
+            placeId: 'plc-omakase',
+            rationale: 'Because you love sushi, this intimate omakase counter is your kind of quiet luxury.',
+          },
+          {
+            placeId: 'plc-jazz-den',
+            rationale: 'Because Miles Davis is your north star, their live quartet nights will feel like home.',
+          },
+          {
+            placeId: 'plc-quirky-cafe',
+            rationale: 'A Wes Anderson-worthy dessert stop to end the night on a whimsical note.',
+          },
+        ],
+        summary: 'Sushi, then jazz, then dessert — an anniversary evening in Bandra tuned to your taste.',
+        reply:
+          'Done! Sushi at Omakase Room, live jazz at The Jazz Den, and a whimsical dessert at The Grand Budapest Café. All mapped below.',
+      };
+      return itinerary as T;
+    }
+    const intent = {
       occasion: 'anniversary dinner',
       vibe: ['romantic', 'live music', 'quirky'],
       tastes: ['Miles Davis', 'Wes Anderson', 'sushi'],
@@ -75,8 +96,7 @@ export class FixtureLLM implements LLMClient {
       area: 'Bandra West, Mumbai',
       needsClarification: false,
     };
-    void user;
-    return canned as T;
+    return intent as T;
   }
 }
 

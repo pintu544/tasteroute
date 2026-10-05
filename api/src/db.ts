@@ -114,6 +114,24 @@ export async function getPlan(id: string): Promise<Plan | null> {
   };
 }
 
+/** Latest plan in a session (for refinements). Null when the session has no plans yet. */
+export async function getLatestPlan(sessionId: string): Promise<Plan | null> {
+  const db = await getDb();
+  const { rows } = await db.query(
+    `SELECT * FROM plans WHERE session_id = $1 ORDER BY created_at DESC LIMIT 1`,
+    [sessionId],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    id: String(r['id']),
+    sessionId: String(r['session_id']),
+    brief: (r['brief'] ?? {}) as PlanBrief,
+    itinerary: (r['itinerary'] ?? { stops: [] }) as Plan['itinerary'],
+    createdAt: String(r['created_at']),
+  };
+}
+
 /** Test-only: reset module state so each test file gets a fresh in-memory DB. */
 export function __resetDbForTests(): void {
   pool = null;

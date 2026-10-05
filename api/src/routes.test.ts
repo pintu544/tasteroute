@@ -31,9 +31,19 @@ describe('POST /api/plan (T-3: intent extraction)', () => {
       body: JSON.stringify({ message: 'anniversary dinner, jazz and sushi in Bandra' }),
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { intent: { occasion: string; tastes: string[] } };
+    const body = (await res.json()) as {
+      intent: { occasion: string; tastes: string[] };
+      reply: string;
+      sessionId: string;
+      plan: { id: string; shareUrl: string; itinerary: { stops: { name: string }[] } } | null;
+    };
     expect(body.intent.occasion).toBe('anniversary dinner');
     expect(body.intent.tastes).toContain('Miles Davis');
+    // T-5: full loop now returns a persisted plan
+    expect(body.reply.length).toBeGreaterThan(10);
+    expect(body.plan).not.toBeNull();
+    expect(body.plan!.shareUrl).toBe(`/plan/${body.plan!.id}`);
+    expect(body.plan!.itinerary.stops.length).toBeGreaterThanOrEqual(2);
   });
 
   it('400s on a missing message', async () => {

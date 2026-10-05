@@ -3,7 +3,10 @@ import { extractIntent } from './intent.js';
 import type { LLMClient } from './llm.js';
 
 function fakeLLM(payload: unknown): LLMClient {
-  return { mode: 'mock', completeJSON: async () => payload };
+  return {
+    mode: 'mock',
+    completeJSON: async <T,>(_system: string, _user: string): Promise<T> => payload as T,
+  };
 }
 
 describe('extractIntent', () => {

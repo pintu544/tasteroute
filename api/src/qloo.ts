@@ -1,4 +1,3 @@
-import type { QlooEntity, QlooPlace } from './qloo.js';
 import { FIXTURE_ENTITIES, FIXTURE_PLACES } from './fixtures.js';
 
 /**

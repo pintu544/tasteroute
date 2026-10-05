@@ -73,7 +73,7 @@ describe('HttpQlooClient parsing contract (documented Qloo shapes)', () => {
     vi.stubGlobal('fetch', fetchMock);
     const client = new HttpQlooClient('secret-key');
     await client.searchEntities('sushi', 3);
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toContain('/search?');
     expect(url).toContain('query=sushi');
     expect((init.headers as Record<string, string>)['X-Api-Key']).toBe('secret-key');
@@ -112,7 +112,7 @@ describe('HttpQlooClient parsing contract (documented Qloo shapes)', () => {
       locationQuery: 'Bandra West, Mumbai',
       take: 8,
     });
-    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toContain('/v2/insights?');
     expect(url).toContain('filter.type=urn%3Aentity%3Aplace');
     expect(url).toContain('signal.interests.entities=e1%2Ce2');

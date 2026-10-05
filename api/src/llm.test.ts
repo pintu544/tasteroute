@@ -30,7 +30,7 @@ describe('FastRouterLLM', () => {
     vi.stubGlobal('fetch', fetchMock);
     const llm = new FastRouterLLM('https://x.test/v1', 'model-z', 'secret');
     expect(await llm.completeJSON('sys', 'user')).toEqual({ a: 1 });
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('https://x.test/v1/chat/completions');
     expect((init.headers as Record<string, string>)['Authorization']).toBe('Bearer secret');
     const body = JSON.parse(init.body as string);

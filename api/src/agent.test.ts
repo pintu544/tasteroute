@@ -5,7 +5,10 @@ import { FixtureLLM, type LLMClient } from './llm.js';
 import { FixtureQlooClient, type QlooClient } from './qloo.js';
 
 function fakeLLM(payload: unknown): LLMClient {
-  return { mode: 'mock', completeJSON: async () => payload };
+  return {
+    mode: 'mock',
+    completeJSON: async <T,>(_system: string, _user: string): Promise<T> => payload as T,
+  };
 }
 
 function emptyQloo(): QlooClient {
@@ -73,7 +76,7 @@ describe('runAgentTurn (mock mode)', () => {
   it('drops hallucinated stops (placeIds not in candidates)', async () => {
     const sneaky: LLMClient = {
       mode: 'mock',
-      completeJSON: async (system: string) => {
+      completeJSON: async <T,>(system: string): Promise<T> => {
         if (system.includes("TasteRoute's planner")) {
           return {
             stops: [
@@ -82,7 +85,7 @@ describe('runAgentTurn (mock mode)', () => {
             ],
             summary: 's',
             reply: 'r',
-          };
+          } as T;
         }
         return {
           occasion: 'date',
@@ -92,7 +95,7 @@ describe('runAgentTurn (mock mode)', () => {
           budget: 'medium',
           area: 'Bandra',
           needsClarification: false,
-        };
+        } as T;
       },
     };
     const result = await runAgentTurn(

@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import cors from 'cors';
 import express from 'express';
+import { getPlan } from './db.js';
 import { extractIntent } from './intent.js';
 import { llmClientFromEnv, type LLMClient } from './llm.js';
 import { qlooClientFromEnv, type QlooClient } from './qloo.js';
@@ -59,5 +60,15 @@ if (process.env['VITEST'] !== 'true') {
     console.log(`tasteroute api listening on :${port}`);
   });
 }
+
+/** Shareable plan link (FR-8). */
+app.get('/api/plan/:id', async (req, res) => {
+  const plan = await getPlan(req.params.id as string);
+  if (!plan) {
+    res.status(404).json({ error: 'plan not found' });
+    return;
+  }
+  res.json({ plan });
+});
 
 export { app };

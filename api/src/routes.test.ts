@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Server } from 'node:http';
 import { app } from './index.js';
+import { savePlan } from './db.js';
 
 describe('POST /api/plan (T-3: intent extraction)', () => {
   let server: Server;
@@ -47,5 +48,58 @@ describe('POST /api/plan (T-3: intent extraction)', () => {
   it('GET /api/health reports mock modes', async () => {
     const res = await fetch(`${base}/api/health`);
     expect(await res.json()).toEqual({ ok: true, qloo: 'mock', llm: 'mock' });
+  });
+});
+
+describe('GET /api/plan/:id (shareable plan link)', () => {
+  let server: Server;
+  let base: string;
+
+  beforeAll(async () => {
+    process.env['QLOO_MOCK'] = 'true';
+    process.env['LLM_MOCK'] = 'true';
+    delete process.env['DATABASE_URL'];
+    await new Promise<void>((resolve) => {
+      server = app.listen(0, () => resolve());
+    });
+    const addr = server.address();
+    const port = typeof addr === 'object' && addr ? addr.port : 0;
+    base = `http://127.0.0.1:${port}`;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve, reject) =>
+      server.close((e) => (e ? reject(e) : resolve())),
+    );
+  });
+
+  it('returns the saved itinerary as JSON', async () => {
+    const plan = await savePlan({
+      sessionId: 'share-sess',
+      brief: { occasion: 'date night' },
+      itinerary: {
+        stops: [
+          {
+            name: 'The Jazz Den',
+            category: 'bar',
+            lat: 19.0596,
+            lng: 72.8295,
+            affinity: 0.94,
+            rationale: 'because you like Miles Davis',
+          },
+        ],
+      },
+    });
+    const res = await fetch(`${base}/api/plan/${plan.id}`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { plan: { id: string; itinerary: { stops: { name: string }[] } } };
+    expect(body.plan.id).toBe(plan.id);
+    expect(body.plan.itinerary.stops[0]!.name).toBe('The Jazz Den');
+  });
+
+  it('404s JSON for unknown ids', async () => {
+    const res = await fetch(`${base}/api/plan/00000000-0000-0000-0000-000000000000`);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'plan not found' });
   });
 });

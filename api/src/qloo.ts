@@ -1,3 +1,6 @@
+import type { QlooEntity, QlooPlace } from './qloo.js';
+import { FIXTURE_ENTITIES, FIXTURE_PLACES } from './fixtures.js';
+
 /**
  * Qloo taste-graph client contract.
  *
@@ -113,42 +116,10 @@ export class HttpQlooClient implements QlooClient {
 export class FixtureQlooClient implements QlooClient {
   readonly mode = 'mock' as const;
 
-  private entities: QlooEntity[] = [
-    { id: 'ent-jazz-001', name: 'Miles Davis', type: 'urn:entity:artist' },
-    { id: 'ent-film-001', name: 'Wes Anderson', type: 'urn:entity:director' },
-    { id: 'ent-food-001', name: 'Sushi', type: 'urn:entity:cuisine' },
-    { id: 'ent-music-002', name: 'Bossa Nova', type: 'urn:entity:genre' },
-  ];
-
-  private places: QlooPlace[] = [
-    {
-      id: 'plc-001',
-      name: 'The Blue Note Jazz Bar',
-      lat: 19.0596,
-      lng: 72.8295,
-      affinity: 0.94,
-      tags: ['jazz', 'live music', 'cocktails'],
-      address: 'Bandra West, Mumbai',
-    },
-    {
-      id: 'plc-002',
-      name: 'Quirky Wes Café',
-      lat: 19.0601,
-      lng: 72.8301,
-      affinity: 0.89,
-      tags: ['quirky', 'desserts', 'film posters'],
-      address: 'Bandra West, Mumbai',
-    },
-    {
-      id: 'plc-003',
-      name: 'Omakase Room',
-      lat: 19.0589,
-      lng: 72.8288,
-      affinity: 0.91,
-      tags: ['sushi', 'omakase', 'date night'],
-      address: 'Bandra West, Mumbai',
-    },
-  ];
+  constructor(
+    private entities = FIXTURE_ENTITIES,
+    private places = FIXTURE_PLACES,
+  ) {}
 
   async searchEntities(query: string, limit = 5): Promise<QlooEntity[]> {
     const q = query.toLowerCase();

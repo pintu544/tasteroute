@@ -1,0 +1,115 @@
+# Autopilot CI — TasteRoute on GitLab (Life After Code, Path B)
+#
+# Stages mirror the DevSecOps lifecycle the Duo autopilot flow drives:
+#   verify → secure → package → release → monitor
+# The Duo custom flow `autopilot` (autopilot-flow.yaml) orchestrates agents
+# around this pipeline: triage → code → review → fix → scan → ship.
+
+include:
+  - template: Jobs/SAST.gitlab-ci.yml
+
+stages:
+  - verify
+  - secure
+  - package
+  - release
+  - monitor
+
+variables:
+  DOCKER_HOST: tcp://docker:2375
+  DOCKER_TLS_CERTDIR: ""
+
+# ---------- verify ----------
+api-tests:
+  stage: verify
+  image: node:22-alpine
+  script:
+    - cd api
+    - npm ci
+    - npm test
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+web-build:
+  stage: verify
+  image: node:22-alpine
+  script:
+    - cd web
+    - npm ci
+    - npm run build
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# ---------- secure (SAST template jobs run here) ----------
+
+# ---------- package ----------
+package-api:
+  stage: package
+  image: docker:28
+  services:
+    - docker:28-dind
+  script:
+    - cd api
+    - docker build -t "$CI_REGISTRY_IMAGE/api:$CI_COMMIT_SHORT_SHA" .
+    - docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD"
+    - docker push "$CI_REGISTRY_IMAGE/api:$CI_COMMIT_SHORT_SHA"
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# ---------- release ----------
+deploy-staging:
+  stage: release
+  image: google/cloud-sdk:alpine
+  script:
+    - chmod +x deploy/cloudrun/deploy.sh
+    - deploy/cloudrun/deploy.sh staging
+  environment:
+    name: staging
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+smoke-staging:
+  stage: release
+  image: curlimages/curl:latest
+  script:
+    - |
+      if [ -z "$STAGING_URL" ]; then
+        echo "STAGING_URL not set (GCP pending) — smoke test SKIPPED honestly."
+        exit 0
+      fi
+      curl -fsS --max-time 30 "$STAGING_URL/api/health"
+      curl -fsS --max-time 30 -X POST "$STAGING_URL/api/plan" \
+        -H 'Content-Type: application/json' -d '{"message":"smoke test"}'
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+deploy-production:
+  stage: release
+  image: google/cloud-sdk:alpine
+  script:
+    - chmod +x deploy/cloudrun/deploy.sh
+    - deploy/cloudrun/deploy.sh production
+  environment:
+    name: production
+  # Govern gate: a human approves the production promotion.
+  when: manual
+  allow_failure: false
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# ---------- monitor ----------
+verify-production:
+  stage: monitor
+  image: curlimages/curl:latest
+  script:
+    - |
+      if [ -z "$PRODUCTION_URL" ]; then
+        echo "PRODUCTION_URL not set (GCP pending) — verification SKIPPED honestly."
+        exit 0
+      fi
+      curl -fsS --max-time 30 "$PRODUCTION_URL/api/health" | grep -q '"ok":true'
+      echo "Production is healthy."
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

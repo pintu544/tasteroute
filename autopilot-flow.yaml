@@ -1,0 +1,73 @@
+# Autopilot — hands-off issue-to-production flow (Life After Code, Path B)
+#
+# GitLab Duo Agent Platform custom flow definition (draft).
+# Pattern: components (agents/steps) + routers (what happens next) + prompts.
+# The exact schema will be verified against the AI Catalog once the
+# contributor onboarding (~24h approval) completes; this file is the
+# source of truth for the intended orchestration either way.
+#
+# Trigger: issue labeled `autopilot`.
+
+name: autopilot
+description: >
+  Hands-off loop from a labeled issue to production: plan, code, review,
+  test, secure, package, stage, verify, ship, monitor — then report back
+  on the issue. Human gates only where GitLab policy requires them.
+trigger:
+  type: issue_label
+  label: autopilot
+
+components:
+  triage:
+    agent: custom
+    prompt_file: agents/triage.md
+  developer:
+    agent: custom
+    prompt_file: agents/developer.md
+    # Foundational Developer flow (issue -> MR) may back this component.
+  reviewer:
+    agent: custom
+    prompt_file: agents/reviewer.md
+    # Foundational Code Review flow may back this component.
+  security:
+    agent: custom
+    prompt_file: agents/security.md
+  fix:
+    agent: custom
+    prompt_file: agents/fix.md
+    # Foundational Fix CI/CD Pipeline flow may back this component.
+  release:
+    agent: custom
+    prompt_file: agents/release.md
+  monitor:
+    agent: custom
+    prompt_file: agents/monitor.md
+
+routers:
+  - on: issue_labeled
+    run: triage
+    next: developer
+  - on: plan_posted
+    run: developer
+    next: [reviewer, security]   # parallel: review + SAST triage
+  - on: pipeline_failed
+    run: fix
+    next: reviewer               # re-review after the fix
+  - on: sast_findings
+    run: security
+    next: fix
+  - on: mr_approved_and_green
+    run: release                 # merge (approval rules) -> staging -> smoke
+    next: monitor
+  - on: staging_unhealthy
+    run: release                 # release agent rolls back, reports, stops
+    stop: true
+  - on: production_verified
+    run: monitor                 # final summary, closes the issue
+    stop: true
+
+governance:
+  approvals:
+    - mr_merge: required          # CODEOWNERS / approval rules stay human-gated
+    - production_deploy: required # manual job in .gitlab-ci.yml
+  audit: every component posts to the issue/MR thread — the thread IS the log.

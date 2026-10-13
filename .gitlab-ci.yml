@@ -32,6 +32,8 @@ api-tests:
     - npm ci
     - npm test
   rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
@@ -43,6 +45,8 @@ web-build:
     - npm ci
     - npm run build
   rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
@@ -64,6 +68,8 @@ package-api:
     - docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD"
     - docker push "$CI_REGISTRY_IMAGE/api:$CI_COMMIT_SHORT_SHA"
   rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 # ---------- release ----------
@@ -79,6 +85,8 @@ deploy-staging:
     name: staging
   allow_failure: true
   rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 # Vercel web deployments (real — uses VERCEL_TOKEN CI variable)
@@ -93,6 +101,8 @@ deploy-web-staging:
     name: staging
     url: https://web-8709793486jio-5691s-projects.vercel.app
   rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 deploy-web-production:
@@ -109,6 +119,8 @@ deploy-web-production:
   when: manual
   allow_failure: false
   rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 # GitHub sync — pushes showcase code to GitHub, triggering Render auto-deploy
@@ -133,6 +145,8 @@ sync-to-github:
         echo "Synced to GitHub — Render will auto-deploy."
       fi
   rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 smoke-staging:
@@ -149,6 +163,8 @@ smoke-staging:
       curl -fsS --max-time 30 "$STAGING_URL/" | grep -q "api-version"
       echo "Footer version span present — staging smoke PASSED."
   rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 deploy-production:
@@ -164,6 +180,8 @@ deploy-production:
   when: manual
   allow_failure: true
   rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 # ---------- self-heal monitor (Slice 3) ----------
@@ -294,4 +312,6 @@ verify-production:
       curl -fsS --max-time 30 "$PRODUCTION_URL/" | grep -q "api-version"
       echo "Footer version span present — production verification PASSED."
   rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

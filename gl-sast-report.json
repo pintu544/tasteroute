@@ -2994,14 +2994,14 @@
       }
     ],
     "type": "sast",
-    "start_time": "2026-10-13T23:39:03",
-    "end_time": "2026-10-13T23:39:16",
+    "start_time": "2026-10-13T23:42:38",
+    "end_time": "2026-10-13T23:42:51",
     "status": "success",
     "observability": {
       "events": [
         {
           "event": "collect_sast_scan_metrics_from_pipeline",
-          "property": "541e1abd-58c1-417e-81e9-17405f678da7",
+          "property": "1efef260-b37b-472a-a2c6-6245e142c11b",
           "label": "semgrep",
           "value": 0,
           "version": "6.27.0",

@@ -18,6 +18,10 @@ stages:
 variables:
   DOCKER_HOST: tcp://docker:2375
   DOCKER_TLS_CERTDIR: ""
+  # SAST in MR pipelines: the Jobs/SAST.gitlab-ci.yml template only creates
+  # analyzer jobs in merge_request_event pipelines when this is "true".
+  # (Default is branch pipelines only.) See spec/sast-fix.md.
+  AST_ENABLE_MR_PIPELINES: "true"
 
 # ---------- verify ----------
 api-tests:

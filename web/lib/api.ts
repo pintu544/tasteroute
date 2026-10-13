@@ -62,7 +62,7 @@ export async function getSharedPlan(id: string): Promise<SharedPlan> {
   return body.plan;
 }
 
-export async function apiHealth(): Promise<{ ok: boolean; qloo: string }> {
+export async function apiHealth(): Promise<{ ok: boolean; qloo: string; version?: string }> {
   const res = await fetch(`${API_BASE}/api/health`);
   if (!res.ok) throw new Error(`API health check failed: ${res.status}`);
   return res.json();

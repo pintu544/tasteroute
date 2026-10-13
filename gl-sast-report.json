@@ -2994,14 +2994,14 @@
       }
     ],
     "type": "sast",
-    "start_time": "2026-10-13T17:33:29",
-    "end_time": "2026-10-13T17:33:41",
+    "start_time": "2026-10-13T20:34:26",
+    "end_time": "2026-10-13T20:34:40",
     "status": "success",
     "observability": {
       "events": [
         {
           "event": "collect_sast_scan_metrics_from_pipeline",
-          "property": "25098d20-cd9a-4062-9dc2-64e5c74bbb82",
+          "property": "3d2724f8-44ab-4552-b80d-28f4e13c6454",
           "label": "semgrep",
           "value": 0,
           "version": "6.27.0",
@@ -3009,7 +3009,7 @@
           "override_count": 0,
           "passthrough_count": 0,
           "custom_exclude_path_count": 0,
-          "time_s": 11,
+          "time_s": 13,
           "file_count": 37
         }
       ]

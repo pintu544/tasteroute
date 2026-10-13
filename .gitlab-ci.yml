@@ -280,8 +280,12 @@ self-heal-monitor:
           return False
 
       results = {
+          # API: server-rendered JSON — robust health signal.
           "api": check("api", API_URL + "/api/health", '"ok":true'),
-          "web": check("web", WEB_URL + "/", "api-version"),
+          # Web: the footer version marker is client-rendered (invisible to curl),
+          # so verify serving instead: HTTP 200 + app title (catches Vercel/DNS/5xx
+          # outages; not client-side JS failures).
+          "web": check("web", WEB_URL + "/", "<title>TasteRoute"),
       }
       failed = [k for k, v in results.items() if not v]
       if not failed:
@@ -324,7 +328,7 @@ self-heal-monitor:
           f"**Monitor pipeline:** {pipe_url}\n"
           f"**Commit at detection time:** {sha}\n\n"
           "**Endpoints probed:**\n"
-          f"- Web: {WEB_URL}/ (expected footer `api-version` marker)\n"
+          f"- Web: {WEB_URL}/ (expected HTTP 200 + TasteRoute title)\n"
           f"- API: {API_URL}/api/health (expected `\"ok\":true`)\n\n"
           "**Evidence:** each failing endpoint was probed 3 times, 10s apart, with a\n"
           "20s timeout. All attempts failed.\n\n"

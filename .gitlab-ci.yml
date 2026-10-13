@@ -43,6 +43,10 @@ web-build:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 # ---------- secure (SAST template jobs run here) ----------
+# The SAST template's `sast` job defaults to stage `test`, which doesn't
+# exist in our stage list. Pin it to `secure` so CI is valid.
+sast:
+  stage: secure
 
 # ---------- package ----------
 package-api:
@@ -59,6 +63,8 @@ package-api:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 # ---------- release ----------
+# GCP jobs (deploy-staging, deploy-production) are kept for reference but
+# GCP was skipped per project decision — they are allowed to fail.
 deploy-staging:
   stage: release
   image: google/cloud-sdk:alpine
@@ -67,6 +73,61 @@ deploy-staging:
     - deploy/cloudrun/deploy.sh staging
   environment:
     name: staging
+  allow_failure: true
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# Vercel web deployments (real — uses VERCEL_TOKEN CI variable)
+deploy-web-staging:
+  stage: release
+  image: node:22-alpine
+  script:
+    - npm install -g vercel
+    - cd web
+    - vercel --token=$VERCEL_TOKEN --yes
+  environment:
+    name: staging
+    url: https://tasteroute.vercel.app
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+deploy-web-production:
+  stage: release
+  image: node:22-alpine
+  script:
+    - npm install -g vercel
+    - cd web
+    - vercel --prod --token=$VERCEL_TOKEN --yes
+  environment:
+    name: production
+    url: https://tasteroute.vercel.app
+  # Govern gate: a human approves the production promotion.
+  when: manual
+  allow_failure: false
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# GitHub sync — pushes showcase code to GitHub, triggering Render auto-deploy
+# for the API. Non-destructive: clean commit on top of GitHub history.
+sync-to-github:
+  stage: release
+  image: alpine:latest
+  script:
+    - apk add --no-cache git rsync openssh-client
+    - git config --global user.email "64580363+pintu544@users.noreply.github.com"
+    - git config --global user.name "Pintu Kumar"
+    - git clone https://oauth2:$GITHUB_TOKEN@github.com/pintu544/tasteroute.git /tmp/gh-sync
+    - rsync -av --exclude=.git --exclude=.gitlab ./ /tmp/gh-sync/
+    - cd /tmp/gh-sync
+    - git add -A
+    - |
+      if git diff --cached --quiet; then
+        echo "No changes to sync."
+      else
+        git commit -m "Sync from GitLab showcase ($CI_COMMIT_SHORT_SHA)"
+        git push origin main
+        echo "Synced to GitHub — Render will auto-deploy."
+      fi
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
@@ -94,8 +155,9 @@ deploy-production:
   environment:
     name: production
   # Govern gate: a human approves the production promotion.
+  # GCP skipped — allowed to fail.
   when: manual
-  allow_failure: false
+  allow_failure: true
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 

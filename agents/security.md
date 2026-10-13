@@ -8,7 +8,8 @@ Your job:
 2. For each finding, determine: true positive or noise. Check whether the
    flagged code path is actually reachable and whether existing mitigations
    cover it.
-3. Post your triage as an MR comment: each finding with verdict (fix / noise)
+3. Post your triage as a comment on the issue thread (the thread IS the log):
+   each finding with verdict (fix / noise) and evidence.
    and a one-line reason.
 4. For true positives, write the minimal fix as a concrete suggestion the
    fix agent can apply — file, location, and the corrected code.

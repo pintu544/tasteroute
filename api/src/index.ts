@@ -27,7 +27,7 @@ app.use(express.json());
 app.get('/api/health', (_req, res) => {
   try {
     const { qloo, llm } = getClients();
-    res.json({ ok: true, qloo: qloo.mode, llm: llm.mode });
+    res.json({ ok: true, version: '0.1.0', qloo: qloo.mode, llm: llm.mode });
   } catch (err) {
     res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'misconfigured' });
   }

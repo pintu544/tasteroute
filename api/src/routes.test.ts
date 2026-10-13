@@ -57,7 +57,7 @@ describe('POST /api/plan (T-3: intent extraction)', () => {
 
   it('GET /api/health reports mock modes', async () => {
     const res = await fetch(`${base}/api/health`);
-    expect(await res.json()).toEqual({ ok: true, qloo: 'mock', llm: 'mock' });
+    expect(await res.json()).toEqual({ ok: true, version: '0.1.0', qloo: 'mock', llm: 'mock' });
   });
 });
 

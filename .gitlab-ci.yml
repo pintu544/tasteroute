@@ -3,7 +3,7 @@
 # Stages mirror the DevSecOps lifecycle the Duo autopilot flow drives:
 #   verify → secure → package → release → monitor
 # The Duo custom flow `autopilot` (autopilot-flow.yaml) orchestrates agents
-# around this pipeline: triage → code → review → fix → scan → ship.
+# around this pipeline: triage → developer → reviewer → security → fix → release.
 
 include:
   - template: Jobs/SAST.gitlab-ci.yml
@@ -91,7 +91,7 @@ deploy-web-staging:
     - vercel --token=$VERCEL_TOKEN --yes
   environment:
     name: staging
-    url: https://tasteroute.vercel.app
+    url: https://web-8709793486jio-5691s-projects.vercel.app
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
@@ -104,7 +104,7 @@ deploy-web-production:
     - vercel --prod --token=$VERCEL_TOKEN --yes
   environment:
     name: production
-    url: https://tasteroute.vercel.app
+    url: https://web-8709793486jio-5691s-projects.vercel.app
   # Govern gate: a human approves the production promotion.
   when: manual
   allow_failure: false
@@ -138,15 +138,16 @@ sync-to-github:
 smoke-staging:
   stage: release
   image: curlimages/curl:latest
+  variables:
+    STAGING_URL: "https://web-8709793486jio-5691s-projects.vercel.app"
+    API_URL: "https://tasteroute-api.onrender.com"
   script:
     - |
-      if [ -z "$STAGING_URL" ]; then
-        echo "STAGING_URL not set (GCP pending) — smoke test SKIPPED honestly."
-        exit 0
-      fi
-      curl -fsS --max-time 30 "$STAGING_URL/api/health"
-      curl -fsS --max-time 30 -X POST "$STAGING_URL/api/plan" \
-        -H 'Content-Type: application/json' -d '{"message":"smoke test"}'
+      echo "Smoke-testing staging: $STAGING_URL"
+      curl -fsS --max-time 30 "$API_URL/api/health" | grep -q '"ok":true'
+      echo "API health OK"
+      curl -fsS --max-time 30 "$STAGING_URL/" | grep -q "api-version"
+      echo "Footer version span present — staging smoke PASSED."
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
@@ -169,13 +170,17 @@ deploy-production:
 verify-production:
   stage: monitor
   image: curlimages/curl:latest
+  variables:
+    PRODUCTION_URL: "https://web-8709793486jio-5691s-projects.vercel.app"
+    API_URL: "https://tasteroute-api.onrender.com"
   script:
     - |
-      if [ -z "$PRODUCTION_URL" ]; then
-        echo "PRODUCTION_URL not set (GCP pending) — verification SKIPPED honestly."
-        exit 0
-      fi
-      curl -fsS --max-time 30 "$PRODUCTION_URL/api/health" | grep -q '"ok":true'
-      echo "Production is healthy."
+      echo "Verifying production: $PRODUCTION_URL"
+      curl -fsS --max-time 30 "$API_URL/api/health" | grep -q '"ok":true'
+      echo "API health OK"
+      curl -fsS --max-time 30 "$API_URL/api/health" | grep -q '"version"'
+      echo "API version field present"
+      curl -fsS --max-time 30 "$PRODUCTION_URL/" | grep -q "api-version"
+      echo "Footer version span present — production verification PASSED."
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

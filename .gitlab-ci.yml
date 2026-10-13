@@ -166,6 +166,117 @@ deploy-production:
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
+# ---------- self-heal monitor (Slice 3) ----------
+# Scheduled production watchdog. Curls the production health endpoints with
+# retries; on a confirmed outage it files a `self-heal` issue assigned to the
+# Autopilot service account, so the 6-component Duo flow picks it up hands-off.
+#
+# Conservative by design:
+#   - 3 attempts per endpoint, 10s apart, before declaring an outage
+#   - Deduplicates: never files while an open `self-heal` issue exists
+#   - Without GITLAB_API_TOKEN (masked CI variable, `api` scope) it can only
+#     observe: a detected outage fails the job visibly instead of filing
+#     silently. Set the variable to enable auto-filing.
+self-heal-monitor:
+  stage: monitor
+  image: python:3.13-alpine
+  variables:
+    WEB_URL: "https://web-8709793486jio-5691s-projects.vercel.app"
+    API_URL: "https://tasteroute-api.onrender.com"
+    AUTOPILOT_SERVICE_ACCOUNT_ID: "43321450"
+  script:
+    - |
+      cat > /tmp/self_heal_monitor.py <<'PYEOF'
+      import datetime, json, os, sys, time, urllib.request
+
+      WEB_URL = os.environ["WEB_URL"]
+      API_URL = os.environ["API_URL"]
+      PROJECT_ID = os.environ["CI_PROJECT_ID"]
+      API_BASE = os.environ["CI_API_V4_URL"]
+      TOKEN = os.environ.get("GITLAB_API_TOKEN", "")
+      SERVICE_ACCOUNT_ID = int(os.environ["AUTOPILOT_SERVICE_ACCOUNT_ID"])
+
+      def check(name, url, marker, attempts=3):
+          for i in range(1, attempts + 1):
+              try:
+                  with urllib.request.urlopen(url, timeout=20) as r:
+                      body = r.read().decode("utf-8", "replace")
+                      if r.status == 200 and marker in body:
+                          print(f"[{name}] healthy (attempt {i}/{attempts})", flush=True)
+                          return True
+                      print(f"[{name}] attempt {i}/{attempts}: unexpected response (status {r.status})", flush=True)
+              except Exception as e:
+                  print(f"[{name}] attempt {i}/{attempts} failed: {e}", flush=True)
+              if i < attempts:
+                  time.sleep(10)
+          return False
+
+      results = {
+          "api": check("api", API_URL + "/api/health", '"ok":true'),
+          "web": check("web", WEB_URL + "/", "api-version"),
+      }
+      failed = [k for k, v in results.items() if not v]
+      if not failed:
+          print("All production endpoints healthy — nothing to do.")
+          sys.exit(0)
+
+      print(f"OUTAGE confirmed on: {', '.join(failed)}")
+      if not TOKEN:
+          print("ERROR: GITLAB_API_TOKEN is not set — cannot file the self-heal issue.")
+          print("Create a personal/project access token with `api` scope and add it as a")
+          print("masked CI/CD variable named GITLAB_API_TOKEN, then re-run.")
+          sys.exit(1)
+
+      def api(method, path, payload=None):
+          req = urllib.request.Request(
+              API_BASE + path, method=method,
+              data=json.dumps(payload).encode() if payload is not None else None,
+              headers={"PRIVATE-TOKEN": TOKEN, "Content-Type": "application/json"},
+          )
+          with urllib.request.urlopen(req, timeout=30) as r:
+              return json.load(r)
+
+      # Deduplicate: never file while an open self-heal issue exists.
+      open_issues = api("GET", f"/projects/{PROJECT_ID}/issues"
+                              f"?labels=self-heal&state=opened&per_page=5")
+      if open_issues:
+          iids = ", ".join("#" + str(i["iid"]) for i in open_issues)
+          print(f"Dedupe: {len(open_issues)} open self-heal issue(s) ({iids}) — skipping file.")
+          sys.exit(0)
+
+      now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+      sha = os.environ.get("CI_COMMIT_SHA", "n/a")[:8]
+      pipe_url = os.environ.get("CI_PIPELINE_URL", "n/a")
+      body = (
+          "## Automated production outage report\n\n"
+          "The self-heal monitor detected a production regression. This issue was filed\n"
+          "automatically — no human was involved.\n\n"
+          f"**Failed checks:** {', '.join(failed)}\n"
+          f"**Detected at:** {now}\n"
+          f"**Monitor pipeline:** {pipe_url}\n"
+          f"**Commit at detection time:** {sha}\n\n"
+          "**Endpoints probed:**\n"
+          f"- Web: {WEB_URL}/ (expected footer `api-version` marker)\n"
+          f"- API: {API_URL}/api/health (expected `\"ok\":true`)\n\n"
+          "**Evidence:** each failing endpoint was probed 3 times, 10s apart, with a\n"
+          "20s timeout. All attempts failed.\n\n"
+          "**Triage guidance:** treat this evidence as ground truth for planning — the\n"
+          "monitor retries before declaring an outage and deduplicates against open\n"
+          "`self-heal` issues, so this represents a confirmed live regression. Plan the\n"
+          "minimal fix that restores the failing endpoint(s)."
+      )
+      issue = api("POST", f"/projects/{PROJECT_ID}/issues", {
+          "title": f"\U0001F6A8 Production regression detected \u2014 {', '.join(failed)} (self-heal)",
+          "description": body,
+          "labels": "self-heal",
+          "assignee_ids": [SERVICE_ACCOUNT_ID],
+      })
+      print(f"Filed self-heal issue: {issue['web_url']}")
+      PYEOF
+      python3 /tmp/self_heal_monitor.py
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+
 # ---------- monitor ----------
 verify-production:
   stage: monitor

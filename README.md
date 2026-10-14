@@ -24,3 +24,5 @@ cd web && npm install && npm run dev
 ```
 
 Set `QLOO_API_KEY` and unset `QLOO_MOCK` for live taste data.
+
+<!-- webhook-verify: Render auto-deploy test 2026-10-14 -->

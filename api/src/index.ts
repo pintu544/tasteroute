@@ -3,7 +3,7 @@ import cors from 'cors';
 import express from 'express';
 import { randomUUID } from 'node:crypto';
 import { runAgentTurn } from './agent.js';
-import { getPlan } from './db.js';
+import { getDb, getPlan } from './db.js';
 import { llmClientFromEnv, type LLMClient } from './llm.js';
 import { qlooClientFromEnv, type QlooClient } from './qloo.js';
 
@@ -24,9 +24,14 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.get('/api/health', (_req, res) => {
+app.get('/api/health', async (_req, res) => {
   try {
     const { qloo, llm } = getClients();
+    // Liveness probe: fail closed if the backing store is unreachable.
+    if (process.env['DATABASE_URL']) {
+      const db = await getDb();
+      await db.query('SELECT 1 FROM schema_migrations');
+    }
     res.json({ ok: true, version: '0.1.0', qloo: qloo.mode, llm: llm.mode });
   } catch (err) {
     res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'misconfigured' });

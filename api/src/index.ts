@@ -30,7 +30,7 @@ app.get('/api/health', async (_req, res) => {
     // Liveness probe: fail closed if the backing store is unreachable.
     if (process.env['DATABASE_URL']) {
       const db = await getDb();
-      await db.query('SELECT 1 FROM schema_migrations');
+      await db.query('SELECT 1');
     }
     res.json({ ok: true, version: '0.1.0', qloo: qloo.mode, llm: llm.mode });
   } catch (err) {

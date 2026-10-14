@@ -59,6 +59,18 @@ describe('POST /api/plan (T-3: intent extraction)', () => {
     const res = await fetch(`${base}/api/health`);
     expect(await res.json()).toEqual({ ok: true, version: '0.1.0', qloo: 'mock', llm: 'mock' });
   });
+
+  it('GET /api/health stays ok when DATABASE_URL is set (DB liveness probe)', async () => {
+    // Non-postgres URL -> pg-mem backend, but the probe code path still runs.
+    process.env['DATABASE_URL'] = 'memory://health-probe';
+    try {
+      const res = await fetch(`${base}/api/health`);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, version: '0.1.0', qloo: 'mock', llm: 'mock' });
+    } finally {
+      delete process.env['DATABASE_URL'];
+    }
+  });
 });
 
 describe('GET /api/plan/:id (shareable plan link)', () => {

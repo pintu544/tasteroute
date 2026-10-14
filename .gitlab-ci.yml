@@ -210,8 +210,10 @@ smoke-staging:
       echo "Smoke-testing staging: $STAGING_URL"
       curl -fsS --max-time 30 "$API_URL/api/health" | grep -q '"ok":true'
       echo "API health OK"
-      curl -fsS --max-time 30 "$STAGING_URL/" | grep -q "api-version"
-      echo "Footer version span present — staging smoke PASSED."
+      # Note: the footer version marker is client-rendered (invisible to curl),
+      # so verify serving instead: HTTP 200 + app title (same as self-heal-monitor).
+      curl -fsS --max-time 30 "$STAGING_URL/" | grep -q "<title>TasteRoute"
+      echo "Web serving OK — staging smoke PASSED."
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
       when: never

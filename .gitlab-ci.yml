@@ -255,7 +255,25 @@ self-heal-monitor:
   script:
     - |
       cat > /tmp/self_heal_monitor.py <<'PYEOF'
-      import datetime, json, os, sys, time, urllib.request
+      """Self-heal monitor v2 — hardened per adversarial QA (Phase 3).
+
+      Changes vs v1:
+        C1: dedupe is staleness-aware — files if the open issue doesn't freshly
+            cover the current failure (different incident or stale > STALE_HOURS).
+        H1: probe timeout 20s -> 45s, attempts 3 -> 4 (Render cold-start/deploy safe).
+        H2: new POST /api/plan probe (expects 400 "message required"; no side effects).
+        M2: triage guidance says re-probe first, close as transient if healthy.
+        M3: API health validated by parsing JSON (ok is True), not substring match.
+        M4: GitLab API failures print a clear error instead of a raw traceback.
+      """
+      import datetime
+      import json
+      import os
+      import re
+      import sys
+      import time
+      import urllib.error
+      import urllib.request
 
       WEB_URL = os.environ["WEB_URL"]
       API_URL = os.environ["API_URL"]
@@ -264,86 +282,215 @@ self-heal-monitor:
       TOKEN = os.environ.get("GITLAB_API_TOKEN", "")
       SERVICE_ACCOUNT_ID = int(os.environ["AUTOPILOT_SERVICE_ACCOUNT_ID"])
 
-      def check(name, url, marker, attempts=3):
-          for i in range(1, attempts + 1):
+      STALE_HOURS = 3
+      PROBE_ATTEMPTS = 4
+      PROBE_TIMEOUT = 45
+      PROBE_INTERVAL = 10
+
+
+      def check(name, url, validate, method="GET", data=None):
+          """Probe an endpoint; validate(status, body) -> bool. True if healthy."""
+          for i in range(1, PROBE_ATTEMPTS + 1):
               try:
-                  with urllib.request.urlopen(url, timeout=20) as r:
+                  req = urllib.request.Request(
+                      url,
+                      method=method,
+                      data=json.dumps(data).encode() if data is not None else None,
+                      headers={"Content-Type": "application/json"} if data is not None else {},
+                  )
+                  with urllib.request.urlopen(req, timeout=PROBE_TIMEOUT) as r:
                       body = r.read().decode("utf-8", "replace")
-                      if r.status == 200 and marker in body:
-                          print(f"[{name}] healthy (attempt {i}/{attempts})", flush=True)
+                      ok = validate(r.status, body)
+                      print(f"[{name}] attempt {i}/{PROBE_ATTEMPTS}: "
+                            f"status {r.status} -> {'healthy' if ok else 'UNEXPECTED'}",
+                            flush=True)
+                      if ok:
                           return True
-                      print(f"[{name}] attempt {i}/{attempts}: unexpected response (status {r.status})", flush=True)
+              except urllib.error.HTTPError as e:
+                  # HTTPError carries the status code — let the validator decide
+                  # (e.g. the /api/plan probe EXPECTS a 400).
+                  try:
+                      body = e.read().decode("utf-8", "replace")
+                  except Exception:
+                      body = ""
+                  ok = validate(e.code, body)
+                  print(f"[{name}] attempt {i}/{PROBE_ATTEMPTS}: "
+                        f"status {e.code} -> {'healthy' if ok else 'UNEXPECTED'}",
+                        flush=True)
+                  if ok:
+                      return True
               except Exception as e:
-                  print(f"[{name}] attempt {i}/{attempts} failed: {e}", flush=True)
-              if i < attempts:
-                  time.sleep(10)
+                  print(f"[{name}] attempt {i}/{PROBE_ATTEMPTS} failed: {e}", flush=True)
+              if i < PROBE_ATTEMPTS:
+                  time.sleep(PROBE_INTERVAL)
           return False
 
-      results = {
-          # API: server-rendered JSON — robust health signal.
-          "api": check("api", API_URL + "/api/health", '"ok":true'),
-          # Web: the footer version marker is client-rendered (invisible to curl),
-          # so verify serving instead: HTTP 200 + app title (catches Vercel/DNS/5xx
-          # outages; not client-side JS failures).
-          "web": check("web", WEB_URL + "/", "<title>TasteRoute"),
-      }
-      failed = [k for k, v in results.items() if not v]
-      if not failed:
-          print("All production endpoints healthy — nothing to do.")
-          sys.exit(0)
 
-      print(f"OUTAGE confirmed on: {', '.join(failed)}")
-      if not TOKEN:
-          print("ERROR: GITLAB_API_TOKEN is not set — cannot file the self-heal issue.")
-          print("Create a personal/project access token with `api` scope and add it as a")
-          print("masked CI/CD variable named GITLAB_API_TOKEN, then re-run.")
-          sys.exit(1)
+      def api_health_ok(status, body):
+          if status != 200:
+              return False
+          try:
+              return json.loads(body).get("ok") is True
+          except Exception:
+              return False
 
-      def api(method, path, payload=None):
-          req = urllib.request.Request(
-              API_BASE + path, method=method,
-              data=json.dumps(payload).encode() if payload is not None else None,
-              headers={"PRIVATE-TOKEN": TOKEN, "Content-Type": "application/json"},
-          )
-          with urllib.request.urlopen(req, timeout=30) as r:
-              return json.load(r)
 
-      # Deduplicate: never file while an open self-heal issue exists.
-      open_issues = api("GET", f"/projects/{PROJECT_ID}/issues"
-                              f"?labels=self-heal&state=opened&per_page=5")
-      if open_issues:
-          iids = ", ".join("#" + str(i["iid"]) for i in open_issues)
-          print(f"Dedupe: {len(open_issues)} open self-heal issue(s) ({iids}) — skipping file.")
-          sys.exit(0)
+      def web_ok(status, body):
+          return status == 200 and "<title>TasteRoute" in body
 
-      now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-      sha = os.environ.get("CI_COMMIT_SHA", "n/a")[:8]
-      pipe_url = os.environ.get("CI_PIPELINE_URL", "n/a")
-      body = (
-          "## Automated production outage report\n\n"
-          "The self-heal monitor detected a production regression. This issue was filed\n"
-          "automatically — no human was involved.\n\n"
-          f"**Failed checks:** {', '.join(failed)}\n"
-          f"**Detected at:** {now}\n"
-          f"**Monitor pipeline:** {pipe_url}\n"
-          f"**Commit at detection time:** {sha}\n\n"
-          "**Endpoints probed:**\n"
-          f"- Web: {WEB_URL}/ (expected HTTP 200 + TasteRoute title)\n"
-          f"- API: {API_URL}/api/health (expected `\"ok\":true`)\n\n"
-          "**Evidence:** each failing endpoint was probed 3 times, 10s apart, with a\n"
-          "20s timeout. All attempts failed.\n\n"
-          "**Triage guidance:** treat this evidence as ground truth for planning — the\n"
-          "monitor retries before declaring an outage and deduplicates against open\n"
-          "`self-heal` issues, so this represents a confirmed live regression. Plan the\n"
-          "minimal fix that restores the failing endpoint(s)."
-      )
-      issue = api("POST", f"/projects/{PROJECT_ID}/issues", {
-          "title": f"\U0001F6A8 Production regression detected \u2014 {', '.join(failed)} (self-heal)",
-          "description": body,
-          "labels": "self-heal",
-          "assignee_ids": [SERVICE_ACCOUNT_ID],
-      })
-      print(f"Filed self-heal issue: {issue['web_url']}")
+
+      def plan_ok(status, body):
+          # POST /api/plan with {} -> 400 "message required" proves the route and
+          # handler are live. No side effects: request validation runs before any
+          # DB or LLM work.
+          return status == 400
+
+
+      def gitlab_api(method, path, payload=None):
+          try:
+              req = urllib.request.Request(
+                  API_BASE + path,
+                  method=method,
+                  data=json.dumps(payload).encode() if payload is not None else None,
+                  headers={"PRIVATE-TOKEN": TOKEN, "Content-Type": "application/json"},
+              )
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  return json.load(r)
+          except Exception as e:
+              print(f"ERROR: GitLab API {method} {path} failed: {e}", flush=True)
+              print("Outage detected but the issue could not be filed/checked. "
+                    "Verify GITLAB_API_TOKEN is valid and the token owner can access "
+                    "this project.", flush=True)
+              sys.exit(1)
+
+
+      def issue_coverage(issue):
+          """Return (set of failed checks the issue covers, created_at as aware dt)."""
+          body = issue.get("description") or ""
+          m = re.search(r"\*\*Failed checks:\*\* (.+)", body)
+          covered = set(x.strip() for x in m.group(1).split(",")) if m else set()
+          created = datetime.datetime.fromisoformat(
+              issue["created_at"].replace("Z", "+00:00"))
+          return covered, created
+
+
+      def should_file(failed, open_issues, now):
+          """Dedupe decision.
+
+          Skip filing only if an open issue FRESHLY covers every currently failing
+          check. File otherwise (different incident, stale coverage, or unparseable
+          issue body — bias is toward filing, never toward silence).
+          Returns (file: bool, reason: str, related: [str]).
+          """
+          failed_set = set(failed)
+          related = []
+          for iss in open_issues:
+              covered, created = issue_coverage(iss)
+              age_h = (now - created).total_seconds() / 3600
+              related.append(
+                  f"#{iss['iid']} (covers: {', '.join(sorted(covered)) or 'unknown'}, "
+                  f"age: {age_h:.1f}h)")
+              if failed_set <= covered and age_h < STALE_HOURS:
+                  return (False,
+                          f"open issue #{iss['iid']} freshly covers "
+                          f"{', '.join(failed)} (age {age_h:.1f}h < {STALE_HOURS}h)",
+                          related)
+          if not open_issues:
+              return True, "no open self-heal issues", related
+          return True, ("no open issue freshly covers "
+                        f"{', '.join(failed)}"), related
+
+
+      def build_body(failed, related):
+          now_s = datetime.datetime.now(datetime.timezone.utc).strftime(
+              "%Y-%m-%d %H:%M:%S UTC")
+          sha = os.environ.get("CI_COMMIT_SHA", "n/a")[:8]
+          pipe_url = os.environ.get("CI_PIPELINE_URL", "n/a")
+          lines = [
+              "## Automated production outage report",
+              "",
+              "The self-heal monitor detected a production regression. This issue was filed",
+              "automatically — no human was involved.",
+              "",
+              f"**Failed checks:** {', '.join(failed)}",
+              f"**Detected at:** {now_s}",
+              f"**Monitor pipeline:** {pipe_url}",
+              f"**Commit at detection time:** {sha}",
+          ]
+          if related:
+              lines.append(
+                  f"**Related open self-heal issue(s):** {'; '.join(related)}")
+          lines += [
+              "",
+              "**Endpoints probed:**",
+              f"- API health: {API_URL}/api/health "
+              "(expected HTTP 200 + JSON body with `\"ok\": true`)",
+              f"- API plan route: POST {API_URL}/api/plan with empty body "
+              "(expected HTTP 400 — proves the route is live; no side effects)",
+              f"- Web: {WEB_URL}/ (expected HTTP 200 + TasteRoute title)",
+              "",
+              "**Evidence:** each failing endpoint was probed "
+              f"{PROBE_ATTEMPTS} times, {PROBE_INTERVAL}s apart, with a "
+              f"{PROBE_TIMEOUT}s timeout. All attempts failed.",
+              "",
+              "**Triage guidance:** the monitor retried before filing, so this is a strong",
+              "signal — but re-probe the failing endpoint(s) yourself before planning. If an",
+              "endpoint is healthy now, close this issue as a transient with a brief note",
+              "(do not plan a fix for a ghost). If the regression is confirmed, plan the",
+              "minimal fix that restores the failing endpoint(s).",
+              "",
+          ]
+          return "\n".join(lines)
+
+
+      def main():
+          results = {
+              # API: server-rendered JSON — robust health signal.
+              "api": check("api", API_URL + "/api/health", api_health_ok),
+              # Plan route: the app's core endpoint; empty POST must 400 (no side effects).
+              "plan": check("plan", API_URL + "/api/plan", plan_ok,
+                            method="POST", data={}),
+              # Web: the footer version marker is client-rendered (invisible to curl),
+              # so verify serving instead: HTTP 200 + app title (catches Vercel/DNS/5xx
+              # outages; not client-side JS failures).
+              "web": check("web", WEB_URL + "/", web_ok),
+          }
+          failed = [k for k, v in results.items() if not v]
+          if not failed:
+              print("All production endpoints healthy — nothing to do.")
+              return 0
+
+          print(f"OUTAGE confirmed on: {', '.join(failed)}")
+          if not TOKEN:
+              print("ERROR: GITLAB_API_TOKEN is not set — cannot file the self-heal issue.")
+              print("Create a personal/project access token with `api` scope and add it as a")
+              print("masked CI/CD variable named GITLAB_API_TOKEN, then re-run.")
+              return 1
+
+          now = datetime.datetime.now(datetime.timezone.utc)
+          open_issues = gitlab_api(
+              "GET",
+              f"/projects/{PROJECT_ID}/issues?labels=self-heal&state=opened&per_page=10")
+
+          file_it, reason, related = should_file(failed, open_issues, now)
+          if not file_it:
+              print(f"Dedupe: {reason} — skipping file.")
+              return 0
+          print(f"Dedupe: {reason} — filing.")
+
+          issue = gitlab_api("POST", f"/projects/{PROJECT_ID}/issues", {
+              "title": f"\U0001F6A8 Production regression detected — "
+                       f"{', '.join(failed)} (self-heal)",
+              "description": build_body(failed, related),
+              "labels": "self-heal",
+              "assignee_ids": [SERVICE_ACCOUNT_ID],
+          })
+          print(f"Filed self-heal issue: {issue['web_url']}")
+          return 0
+
+
+      if __name__ == "__main__":
+          sys.exit(main())
       PYEOF
       python3 /tmp/self_heal_monitor.py
   rules:

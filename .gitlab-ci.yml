@@ -204,7 +204,7 @@ smoke-staging:
   image: curlimages/curl:latest
   variables:
     STAGING_URL: "https://web-8709793486jio-5691s-projects.vercel.app"
-    API_URL: "https://tasteroute-api.onrender.com"
+    API_URL: "https://tasteroute-api-s0zz.onrender.com"
   script:
     - |
       echo "Smoke-testing staging: $STAGING_URL"
@@ -252,7 +252,7 @@ self-heal-monitor:
   image: python:3.13-alpine
   variables:
     WEB_URL: "https://web-8709793486jio-5691s-projects.vercel.app"
-    API_URL: "https://tasteroute-api.onrender.com"
+    API_URL: "https://tasteroute-api-s0zz.onrender.com"
     AUTOPILOT_SERVICE_ACCOUNT_ID: "43321450"
   script:
     - |
@@ -504,7 +504,7 @@ verify-production:
   image: curlimages/curl:latest
   variables:
     PRODUCTION_URL: "https://web-8709793486jio-5691s-projects.vercel.app"
-    API_URL: "https://tasteroute-api.onrender.com"
+    API_URL: "https://tasteroute-api-s0zz.onrender.com"
   script:
     - |
       echo "Verifying production: $PRODUCTION_URL"

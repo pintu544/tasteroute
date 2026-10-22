@@ -125,3 +125,24 @@ export const DOCUMENTED_INSIGHTS_RESPONSE = {
     },
   ],
 };
+
+/** Shape actually returned by the live hackathon API (verified 2026-10-22):
+ *  rows wrapped in results.entities, longitude as `lon`, address under
+ *  properties, and `popularity` instead of a per-row affinity. */
+export const LIVE_INSIGHTS_RESPONSE = {
+  success: true,
+  results: {
+    entities: [
+      {
+        entity_id: 'p9',
+        name: 'Phoenix Marketcity',
+        type: 'urn:entity',
+        subtype: 'urn:entity:place',
+        popularity: 0.87,
+        location: { lat: 19.0863795, lon: 72.8889774, geohash: 'te7udds4hr0e' },
+        properties: { address: 'Kurla West, Mumbai' },
+        tags: [{ id: 'urn:tag:activity_type:qloo:dining_drinking', name: 'Dining drinking' }],
+      },
+    ],
+  },
+};

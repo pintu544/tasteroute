@@ -90,9 +90,14 @@ export class HttpQlooClient implements QlooClient {
     if (opts.locationQuery) params.set('filter.location.query', opts.locationQuery);
     const res = await fetch(`${qlooBase()}/v2/insights?${params}`, { headers: this.headers() });
     if (!res.ok) throw new QlooError(`Qloo insights failed: HTTP ${res.status}`, res.status);
-    const data = (await res.json()) as { results?: Array<Record<string, unknown>> };
-    return (data.results ?? []).map((r) => {
+    const data = (await res.json()) as {
+      results?: Array<Record<string, unknown>> | { entities?: Array<Record<string, unknown>> };
+    };
+    // Live /v2/insights wraps rows in results.entities; accept a bare array too.
+    const rows = Array.isArray(data.results) ? data.results : (data.results?.entities ?? []);
+    return rows.map((r) => {
       const loc = (r['location'] ?? r['geocode'] ?? {}) as Record<string, unknown>;
+      const props = (r['properties'] ?? {}) as Record<string, unknown>;
       const tags = Array.isArray(r['tags'])
         ? (r['tags'] as Array<Record<string, unknown> | string>).map((t) =>
             String(typeof t === 'string' ? t : (t['name'] ?? '')),
@@ -102,10 +107,22 @@ export class HttpQlooClient implements QlooClient {
         id: String(r['id'] ?? r['entity_id'] ?? ''),
         name: String(r['name'] ?? ''),
         lat: typeof loc['lat'] === 'number' ? (loc['lat'] as number) : null,
-        lng: typeof loc['lng'] === 'number' ? (loc['lng'] as number) : null,
-        affinity: Number(r['affinity'] ?? 0),
+        // Live API names the longitude field `lon`, not `lng`.
+        lng:
+          typeof loc['lng'] === 'number'
+            ? (loc['lng'] as number)
+            : typeof loc['lon'] === 'number'
+              ? (loc['lon'] as number)
+              : null,
+        // Live rows carry `popularity` (0..1) rather than a per-row affinity.
+        affinity: Number(r['affinity'] ?? r['popularity'] ?? 0),
         tags,
-        address: typeof loc['address'] === 'string' ? (loc['address'] as string) : undefined,
+        address:
+          typeof loc['address'] === 'string'
+            ? (loc['address'] as string)
+            : typeof props['address'] === 'string'
+              ? (props['address'] as string)
+              : undefined,
       };
     });
   }

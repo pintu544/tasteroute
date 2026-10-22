@@ -5,7 +5,7 @@ import {
   QlooError,
   qlooClientFromEnv,
 } from './qloo.js';
-import { DOCUMENTED_INSIGHTS_RESPONSE, DOCUMENTED_SEARCH_RESPONSE } from './fixtures.js';
+import { DOCUMENTED_INSIGHTS_RESPONSE, DOCUMENTED_SEARCH_RESPONSE, LIVE_INSIGHTS_RESPONSE } from './fixtures.js';
 
 describe('qlooClientFromEnv', () => {
   it('returns the fixture client when QLOO_MOCK=true (no key needed)', () => {
@@ -100,6 +100,21 @@ describe('HttpQlooClient parsing contract (documented Qloo shapes)', () => {
       lng: 72.8288,
       affinity: 0.91,
       tags: ['sushi', 'omakase'],
+    });
+  });
+
+  it('parses the live /v2/insights shape (results.entities, lon, properties.address, popularity)', async () => {
+    stubFetch(LIVE_INSIGHTS_RESPONSE);
+    const client = new HttpQlooClient('k');
+    const places = await client.getInsights({ entityIds: ['e1'] });
+    expect(places[0]).toMatchObject({
+      id: 'p9',
+      name: 'Phoenix Marketcity',
+      lat: 19.0863795,
+      lng: 72.8889774,
+      affinity: 0.87,
+      tags: ['Dining drinking'],
+      address: 'Kurla West, Mumbai',
     });
   });
 

@@ -252,7 +252,7 @@ self-heal-monitor:
   image: python:3.13-alpine
   variables:
     WEB_URL: "https://web-8709793486jio-5691s-projects.vercel.app"
-    API_URL: "https://tasteroute-api-s0zz.onrender.com"
+    API_URL: "https://tasteroute-api-vign.onrender.com"
     AUTOPILOT_SERVICE_ACCOUNT_ID: "43321450"
   script:
     - |
@@ -518,3 +518,4 @@ verify-production:
     - if: $CI_PIPELINE_SOURCE == "schedule"
       when: never
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
